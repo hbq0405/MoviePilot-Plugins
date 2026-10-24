@@ -27,9 +27,6 @@ DEFAULT_CONFIG = {
     "min_vote_count": 10,
     "main_role_only": False,
     "chinese_title_required": False,
-    "quality": "",
-    "resolution": "",
-    "effect": "",
 }
 
 VALID_MEDIA_TYPES = {"Movie", "TV"}
@@ -41,7 +38,7 @@ TMDB_GENRE_NAMES = {
     99: "纪录片", 18: "剧情", 10751: "家庭", 14: "奇幻", 36: "历史",
     27: "恐怖", 10402: "音乐", 9648: "悬疑", 10749: "爱情",
     878: "科幻", 10770: "电视电影", 53: "惊悚", 10752: "战争", 37: "西部",
-    10759: "动作冒险", 10762: "儿童", 10763: "新闻", 10764: "综艺",
+    10759: "动作冒险", 10762: "儿童", 10763: "新闻", 10764: "真人秀",
     10765: "纪实", 10766: "肥皂剧", 10767: "脱口秀", 10768: "战争",
 }
 
@@ -86,9 +83,6 @@ def normalize_config(value: object) -> dict[str, Any]:
         "min_vote_count": min_vote_count,
         "main_role_only": bool(raw.get("main_role_only")),
         "chinese_title_required": bool(raw.get("chinese_title_required")),
-        "quality": str(raw.get("quality") or "").strip(),
-        "resolution": str(raw.get("resolution") or "").strip(),
-        "effect": str(raw.get("effect") or "").strip(),
     }
 
 

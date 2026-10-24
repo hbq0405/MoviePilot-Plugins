@@ -55,7 +55,7 @@
               <v-chip v-if="person.stats.pending_release" size="x-small" variant="tonal">
                 待映 {{ person.stats.pending_release }}</v-chip>
               <v-chip v-if="person.stats.fulfilled" size="x-small" color="success" variant="tonal">
-                完成 {{ person.stats.fulfilled }}</v-chip>
+                入库 {{ person.stats.fulfilled }}</v-chip>
               <v-chip v-if="person.stats.ignored" size="x-small" color="grey" variant="tonal">
                 忽略 {{ person.stats.ignored }}</v-chip>
             </div>
@@ -211,7 +211,7 @@
           <div class="text-caption text-medium-emphasis mb-2">
             留空字段沿用默认策略；保存后立即生效，下次扫描按新策略执行。
           </div>
-          <StrategyForm v-model="strategyDraft" :genres="genres" />
+          <StrategyForm v-if="strategyOpen" v-model="strategyDraft" :genres="genres" />
           <div class="d-flex justify-end ga-2 mt-3">
             <v-btn variant="text" @click="useDefaultStrategy">重置为默认</v-btn>
             <v-btn color="primary" :loading="strategySaving" @click="saveStrategy">保存</v-btn>
@@ -296,7 +296,7 @@ function isSubscribed(personId) {
 }
 
 function targetMeta(target) {
-  if (target.status === 'fulfilled') return { text: '已完成', color: 'success' };
+  if (target.status === 'fulfilled') return { text: '已入库', color: 'success' };
   if (target.status === 'pending_release') return { text: '待上映', color: 'default' };
   if (target.status === 'ignored') return { text: '已忽略', color: 'grey' };
   if (target.subscribe_id || target.external_subscribe) return { text: '订阅中', color: 'info' };
@@ -310,7 +310,7 @@ async function load() {
     persons.value = response.items || [];
     const total = persons.value.reduce((sum, p) => sum + p.stats.total, 0);
     const fulfilled = persons.value.reduce((sum, p) => sum + p.stats.fulfilled, 0);
-    if (total) lastSummary.value = `共追踪 ${total} 部作品，已完成 ${fulfilled} 部`;
+    if (total) lastSummary.value = `共追踪 ${total} 部作品，已入库 ${fulfilled} 部`;
   } catch (error) {
     notify(`人物列表加载失败：${error.message || error}`, 'error');
   } finally {

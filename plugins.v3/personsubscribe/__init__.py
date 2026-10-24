@@ -22,7 +22,6 @@ from apscheduler.triggers.cron import CronTrigger
 from app.chain.download import DownloadChain
 from app.chain.subscribe import SubscribeChain
 from app.plugins import _PluginBase
-from app.schemas import MediaInfo
 from app.schemas.types import EventType, MediaSource, MediaType
 from app.sdk.config import settings
 from app.sdk.events import Event, eventmanager
@@ -55,8 +54,8 @@ class PersonSubscribe(_PluginBase):
         "自动扫描其参演/执导作品，按题材/年份/评分/番位等策略过滤后创建订阅；"
         "未上映作品待映跟踪，上映后自动补订，支持逐人物策略、暂停恢复与手动刷新。"
     )
-    plugin_icon = "personsubscribe.png"
-    plugin_version = "1.0.0"
+    plugin_icon = "https://raw.githubusercontent.com/hbq0405/MoviePilot-Plugins/main/icons/personsubscribe.png"
+    plugin_version = "1.0.1"
     plugin_author = "hbq0405"
     author_url = "https://github.com/hbq0405"
     plugin_config_prefix = "personsubscribe_"
@@ -289,6 +288,7 @@ class PersonSubscribe(_PluginBase):
                 "person_id": int(raw["id"]),
                 "name": raw.get("name") or "",
                 "original_name": raw.get("original_name") or "",
+                "profile_path": raw.get("profile_path"),
                 "profile_url": self._poster_url(raw.get("profile_path")),
                 "known_for_department": raw.get("known_for_department") or "",
                 "popularity": raw.get("popularity") or 0,
@@ -389,6 +389,17 @@ class PersonSubscribe(_PluginBase):
                     continue
             desired.append(core.build_target(person_id, str(person.get("name") or ""),
                                              work, config))
+        # 早期添加的记录缺头像时先在锁外取人物详情补齐。
+        backfill = None
+        if not person.get("profile_path"):
+            detail = self._person_detail(person_id)
+            backfill = {
+                "profile_path": detail.get("profile_path") or None,
+                "original_name": (
+                    person.get("original_name")
+                    or (detail.get("also_known_as") or [None])[0]
+                ),
+            }
         with self._lock:
             persons = self._load_persons()
             targets = self._load_targets()
@@ -399,10 +410,16 @@ class PersonSubscribe(_PluginBase):
             result["fulfilled"] = sum(
                 1 for t in merged.values() if t.get("status") == "fulfilled")
             if str(person_id) in persons:
-                persons[str(person_id)]["last_checked_at"] = (
+                record = persons[str(person_id)]
+                record["last_checked_at"] = (
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                persons[str(person_id)]["last_error"] = None
-            self._save_persons(persons)
+                record["last_error"] = None
+                if backfill:
+                    if backfill["profile_path"]:
+                        record["profile_path"] = backfill["profile_path"]
+                    if not record.get("original_name") and backfill["original_name"]:
+                        record["original_name"] = backfill["original_name"]
+                self._save_persons(persons)
             self._save_targets(merged)
         return result
 
@@ -446,90 +463,67 @@ class PersonSubscribe(_PluginBase):
     def _submit_target(self, target: Dict[str, Any]) -> bool:
         """查缺并提交单个目标订阅；原地更新 target 状态，返回是否新建。"""
         mtype = MediaType.MOVIE if target["entity_type"] == "movie" else MediaType.TV
-        work = self._target_tmdb_info(target)
-        mediainfo = MediaInfo(tmdb_info=work)
-        if getattr(mediainfo, "type", None) is None:
-            mediainfo.type = mtype
-        meta = MetaInfo(target.get("title") or "")
+        title = target.get("title") or ""
+        meta = MetaInfo(title)
         meta.type = mtype
+        # 走宿主识别链获取带完整身份的 MediaInfo（含缓存）；不能手工拼装
+        # schemas 的 MediaInfo，其不做来源字段投影，会导致库内查缺失效。
+        try:
+            mediainfo = self.chain.recognize_media(
+                meta=meta,
+                mtype=mtype,
+                media_source=MediaSource.TMDB,
+                media_id=str(target["tmdb_id"]),
+            )
+        except Exception as err:
+            logger.warning(f"人物订阅：识别媒体失败 {title}：{err}")
+            return False
+        if mediainfo is None:
+            logger.warning(f"人物订阅：未能识别媒体信息 {title}，本轮跳过")
+            return False
         try:
             exist_flag, _ = DownloadChain().get_no_exists_info(
                 meta=meta, mediainfo=mediainfo)
         except Exception as err:
-            logger.warning(f"人物订阅：查询媒体库失败 {target.get('title')}：{err}")
+            logger.warning(f"人物订阅：查询媒体库失败 {title}：{err}")
             return False
         person_names = "、".join(
             name for name in (target.get("persons") or {}).values())
         if exist_flag:
             target["status"] = "fulfilled"
-            self._append_history("已存在", target.get("title") or "",
-                                 mtype.value, person_names, "媒体库中已存在")
+            self._append_history("已入库", title, mtype.value, person_names,
+                                 "媒体库中已存在")
             return False
-        config = self._match_config(target)
         try:
             subscribe_id, error = SubscribeChain().add(
-                title=target.get("title") or "",
+                title=title,
                 year=str(target.get("release_date") or "")[:4],
                 mtype=mtype,
                 media_source=MediaSource.TMDB,
                 media_id=str(target["tmdb_id"]),
                 exist_ok=True,
-                quality=config.get("quality") or None,
-                resolution=config.get("resolution") or None,
-                effect=config.get("effect") or None,
                 username=self._username,
             )
         except Exception as err:
-            logger.error(f"人物订阅：添加订阅异常 {target.get('title')}：{err}")
+            logger.error(f"人物订阅：添加订阅异常 {title}：{err}")
             return False
         if not subscribe_id:
             message = str(error or "")
             if "已存在" in message or "存在" in message:
                 target["external_subscribe"] = True
-                logger.info(f"人物订阅：{target.get('title')} 已存在外部订阅，等待完成事件")
+                logger.info(f"人物订阅：{title} 已存在外部订阅，等待完成事件")
             else:
-                logger.warning(f"人物订阅：添加订阅失败 {target.get('title')}：{message}")
+                logger.warning(f"人物订阅：添加订阅失败 {title}：{message}")
             return False
         target["subscribe_id"] = int(subscribe_id)
         target["last_change"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self._append_history("订阅", target.get("title") or "", mtype.value,
+        self._append_history("订阅", title, mtype.value,
                              person_names, f"订阅 #{subscribe_id}")
         return True
 
-    def _target_tmdb_info(self, target: Dict[str, Any]) -> Dict[str, Any]:
-        """把 target 元数据还原成 TMDb 原始形状，供 MediaInfo 解析。"""
-        is_movie = target["entity_type"] == "movie"
-        info: Dict[str, Any] = {
-            "id": target["tmdb_id"],
-            "media_type": target["entity_type"],
-            "poster_path": target.get("poster_path"),
-            "vote_average": target.get("vote_average") or 0,
-            "vote_count": target.get("vote_count") or 0,
-            "popularity": target.get("popularity") or 0,
-            "genre_ids": target.get("genre_ids") or [],
-        }
-        release = target.get("release_date")
-        if is_movie:
-            info["title"] = target.get("title")
-            info["original_title"] = target.get("title")
-            if release:
-                info["release_date"] = release
-        else:
-            info["name"] = target.get("title")
-            info["original_name"] = target.get("title")
-            if release:
-                info["first_air_date"] = release
-        return info
-
-    def _match_config(self, target: Dict[str, Any]) -> Dict[str, Any]:
-        """命中目标的人物策略（多人物共享目标时取最近刷新的人物配置）。"""
-        with self._lock:
-            persons = self._load_persons()
-        for pid in (target.get("persons") or {}):
-            person = persons.get(str(pid))
-            if person is not None:
-                return self._person_config(person)
-        return dict(self._default_config)
+    def _person_detail(self, person_id: int) -> Dict[str, Any]:
+        """TMDb 人物详情（用于补齐头像与名称）。"""
+        return self._tmdb_get(f"/person/{person_id}") or {}
 
     # ─── 事件 ─────────────────────────────────────────────
     @eventmanager.register(EventType.SubscribeComplete)

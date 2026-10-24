@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { p as pluginApi, _ as _sfc_main$1 } from './api-aSRXrTbr.js';
+import { p as pluginApi, _ as _sfc_main$1 } from './api-BjEN1EDz.js';
 
 const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,createTextVNode:_createTextVNode,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
 

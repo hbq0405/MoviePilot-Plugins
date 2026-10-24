@@ -130,13 +130,10 @@ const effectOptions = [
   { title: 'SDR', value: '[\\s.]+SDR[\\s.]+' },
 ];
 
+// 只在挂载时从 props 取初值；不做 prop→local 的深度回写 watch，
+// 否则会与 local→emit 形成"选择→emit→父更新→重新赋值→再 emit"的反馈死循环。
 const local = reactive({ ...defaults(), ...(props.modelValue || {}) });
 
-watch(
-  () => props.modelValue,
-  (value) => Object.assign(local, defaults(), value || {}),
-  { deep: true },
-);
 watch(
   local,
   () => emit('update:modelValue', { ...local }),

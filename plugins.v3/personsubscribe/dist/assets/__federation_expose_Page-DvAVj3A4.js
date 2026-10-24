@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { _ as _sfc_main$1, p as pluginApi } from './api-aSRXrTbr.js';
+import { _ as _sfc_main$1, p as pluginApi } from './api-BjEN1EDz.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -142,7 +142,7 @@ function isSubscribed(personId) {
 }
 
 function targetMeta(target) {
-  if (target.status === 'fulfilled') return { text: '已完成', color: 'success' };
+  if (target.status === 'fulfilled') return { text: '已入库', color: 'success' };
   if (target.status === 'pending_release') return { text: '待上映', color: 'default' };
   if (target.status === 'ignored') return { text: '已忽略', color: 'grey' };
   if (target.subscribe_id || target.external_subscribe) return { text: '订阅中', color: 'info' };
@@ -156,7 +156,7 @@ async function load() {
     persons.value = response.items || [];
     const total = persons.value.reduce((sum, p) => sum + p.stats.total, 0);
     const fulfilled = persons.value.reduce((sum, p) => sum + p.stats.fulfilled, 0);
-    if (total) lastSummary.value = `共追踪 ${total} 部作品，已完成 ${fulfilled} 部`;
+    if (total) lastSummary.value = `共追踪 ${total} 部作品，已入库 ${fulfilled} 部`;
   } catch (error) {
     notify(`人物列表加载失败：${error.message || error}`, 'error');
   } finally {
@@ -537,7 +537,7 @@ return (_ctx, _cache) => {
                               variant: "tonal"
                             }, {
                               default: _withCtx(() => [
-                                _createTextVNode(" 完成 " + _toDisplayString(person.stats.fulfilled), 1)
+                                _createTextVNode(" 入库 " + _toDisplayString(person.stats.fulfilled), 1)
                               ]),
                               _: 2
                             }, 1024))
@@ -973,11 +973,14 @@ return (_ctx, _cache) => {
             _createVNode(_component_v_card_text, null, {
               default: _withCtx(() => [
                 _cache[29] || (_cache[29] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-2" }, " 留空字段沿用默认策略；保存后立即生效，下次扫描按新策略执行。 ", -1)),
-                _createVNode(_sfc_main$1, {
-                  modelValue: strategyDraft.value,
-                  "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((strategyDraft).value = $event)),
-                  genres: genres.value
-                }, null, 8, ["modelValue", "genres"]),
+                (strategyOpen.value)
+                  ? (_openBlock(), _createBlock(_sfc_main$1, {
+                      key: 0,
+                      modelValue: strategyDraft.value,
+                      "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((strategyDraft).value = $event)),
+                      genres: genres.value
+                    }, null, 8, ["modelValue", "genres"]))
+                  : _createCommentVNode("", true),
                 _createElementVNode("div", _hoisted_33, [
                   _createVNode(_component_v_btn, {
                     variant: "text",
@@ -1075,6 +1078,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-a91a88a9"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-88259c95"]]);
 
 export { Page as default };

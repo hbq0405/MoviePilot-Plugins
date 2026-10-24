@@ -170,5 +170,6 @@ def test_merge_targets_does_not_downgrade_terminal_states():
 
 
 def test_genres_table_has_variety():
-    assert core.TMDB_GENRE_NAMES[10764] == "综艺"
+    assert core.TMDB_GENRE_NAMES[10764] == "真人秀"
+    assert core.TMDB_GENRE_NAMES[10767] == "脱口秀"
     assert 28 in core.TMDB_GENRE_NAMES
