@@ -7,7 +7,7 @@
 MoviePilot → 插件市场 → 添加仓库，填入：
 
 ```text
-https://github.com/hbq0405/MoviePilot-PersonSubscribe
+https://github.com/hbq0405/MoviePilot-Plugins
 ```
 
 然后在市场中安装「人物订阅」，启用并在插件详情页添加人物即可。
