@@ -60,7 +60,7 @@
                 忽略 {{ person.stats.ignored }}</v-chip>
             </div>
             <div class="text-caption text-medium-emphasis mt-2">
-              {{ person.last_checked_at ? `上次扫描：${person.last_checked_at}` : '尚未扫描' }}
+              {{ person.last_checked_at ? `上次扫描：${formatTime(person.last_checked_at)}` : '尚未扫描' }}
             </div>
             <v-alert v-if="person.last_error" type="error" variant="tonal" density="compact"
                      class="mt-1 ps-error">
@@ -156,7 +156,7 @@
             <v-alert v-if="detail.person.last_error" type="error" variant="tonal" density="compact"
                      class="mb-3">{{ detail.person.last_error }}</v-alert>
             <div class="text-caption text-medium-emphasis mb-3">
-              {{ detail.person.last_checked_at ? `上次扫描：${detail.person.last_checked_at}` : '尚未扫描' }}
+              {{ detail.person.last_checked_at ? `上次扫描：${formatTime(detail.person.last_checked_at)}` : '尚未扫描' }}
             </div>
             <v-alert v-if="!detail.targets.length" type="info" variant="tonal">
               暂无作品记录，等待下一次扫描
@@ -209,7 +209,8 @@
         </v-card-title>
         <v-card-text>
           <div class="text-caption text-medium-emphasis mb-2">
-            留空字段沿用默认策略；保存后立即生效，下次扫描按新策略执行。
+            表单显示当前实际生效策略（默认策略 + 个人覆盖）；保存时只固定与默认不同的字段，
+            其余字段继续跟随默认策略变化。
           </div>
           <StrategyForm v-if="strategyOpen" v-model="strategyDraft" :genres="genres" />
           <div class="d-flex justify-end ga-2 mt-3">
@@ -251,6 +252,7 @@ const emit = defineEmits(['close']);
 
 const persons = ref([]);
 const genres = ref([]);
+const pluginDefaultConfig = ref(null);
 const loading = ref(false);
 const lastSummary = ref('');
 const refreshingAll = ref(false);
@@ -279,6 +281,13 @@ const DEPARTMENT_NAMES = {
   Acting: '演员', Directing: '导演', Writing: '编剧', Production: '制作',
   Sound: '声音', Camera: '摄影', Art: '美术', Editing: '剪辑', Creator: '主创',
 };
+
+function formatTime(value) {
+  // "2026-10-25 00:17:23" -> "10-25 00:17"，去年份只留日期时间。
+  const raw = String(value || '');
+  const matched = raw.match(/^\d{4}-(\d{2}-\d{2} \d{2}:\d{2})/);
+  return matched ? matched[1] : raw;
+}
 
 function notify(text, color = 'success') {
   snackbar.text = text;
@@ -435,22 +444,40 @@ async function onRefreshAll() {
 
 function openStrategy() {
   if (!detail.value) return;
-  strategyDraft.value = { ...(detail.value.person.config || {}) };
+  // 展示实际生效策略（默认 + 个人覆盖），而不是只展示覆盖字段，
+  // 否则未覆盖字段会显示成代码默认值，与真实生效值割裂。
+  const effective = detail.value.person.effective_config
+    || { ...(pluginDefaultConfig.value || {}), ...(detail.value.person.config || {}) };
+  strategyDraft.value = { ...effective };
   strategyOpen.value = true;
 }
 
 function useDefaultStrategy() {
-  strategyDraft.value = {};
+  strategyDraft.value = { ...(pluginDefaultConfig.value || {}) };
+}
+
+function diffStrategy(form, defaults) {
+  // 只保留与默认策略不同的字段；数组按值比较。
+  const override = {};
+  const base = defaults || {};
+  for (const [key, value] of Object.entries(form || {})) {
+    if (JSON.stringify(value) !== JSON.stringify(base[key])) {
+      override[key] = value;
+    }
+  }
+  return override;
 }
 
 async function saveStrategy() {
   if (!detail.value) return;
   strategySaving.value = true;
   try {
-    const config = { ...strategyDraft.value };
-    const hasOverride = Object.keys(config).length > 0;
+    // 与默认策略一致的表单值不保存，保持跟随默认策略变化。
+    const override = pluginDefaultConfig.value
+      ? diffStrategy(strategyDraft.value, pluginDefaultConfig.value)
+      : { ...strategyDraft.value };
     const response = await pluginApi.updatePerson(detail.value.person.person_id, {
-      config: hasOverride ? config : null,
+      config: Object.keys(override).length ? override : null,
     });
     if (response.success === false) {
       notify(response.message || '保存失败', 'error');
@@ -458,7 +485,8 @@ async function saveStrategy() {
     }
     notify('策略已保存');
     strategyOpen.value = false;
-    detail.value.person.config = hasOverride ? config : null;
+    detail.value.person.config = Object.keys(override).length ? override : null;
+    await reloadDetail();
   } catch (error) {
     notify(`保存失败：${error.message || error}`, 'error');
   } finally {
@@ -516,7 +544,17 @@ async function setTarget(target, status) {
 onMounted(() => {
   load();
   loadGenres();
+  loadDefaultConfig();
 });
+
+async function loadDefaultConfig() {
+  try {
+    const response = await pluginApi.getConfig();
+    pluginDefaultConfig.value = response.config?.default_config || null;
+  } catch (error) {
+    pluginDefaultConfig.value = null;
+  }
+}
 </script>
 
 <style scoped>
@@ -525,7 +563,7 @@ onMounted(() => {
 }
 .ps-person-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
 }
 .ps-avatar {

@@ -1,0 +1,62 @@
+
+.ps-page-root[data-v-4fcee3c4] {
+  width: 100%;
+}
+.ps-person-grid[data-v-4fcee3c4] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.ps-avatar[data-v-4fcee3c4] {
+  border-radius: 6px;
+  overflow: hidden;
+  flex: none;
+}
+.ps-avatar-wrap[data-v-4fcee3c4] {
+  flex: none;
+  margin-right: 12px;
+}
+.ps-avatar-empty[data-v-4fcee3c4] {
+  background: rgba(128, 128, 128, 0.15);
+  width: 72px;
+  height: 108px;
+}
+.ps-person-body[data-v-4fcee3c4] {
+  min-width: 0;
+  flex: 1;
+}
+.ps-person-card[data-v-4fcee3c4] {
+  cursor: pointer;
+}
+.ps-search-list[data-v-4fcee3c4],
+.ps-target-list[data-v-4fcee3c4] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ps-search-item[data-v-4fcee3c4],
+.ps-target-item[data-v-4fcee3c4] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 8px;
+  padding: 8px;
+}
+.ps-search-item .ps-avatar-empty[data-v-4fcee3c4],
+.ps-target-item .ps-avatar-empty[data-v-4fcee3c4] {
+  width: 52px;
+  height: 78px;
+}
+.ps-target-item .ps-avatar-empty[data-v-4fcee3c4] {
+  width: 46px;
+  height: 69px;
+}
+.ps-search-body[data-v-4fcee3c4],
+.ps-target-body[data-v-4fcee3c4] {
+  flex: 1;
+  min-width: 0;
+}
+.ps-target-actions[data-v-4fcee3c4] {
+  flex: none;
+}

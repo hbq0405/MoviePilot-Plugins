@@ -55,7 +55,7 @@ class PersonSubscribe(_PluginBase):
         "未上映作品待映跟踪，上映后自动补订，支持逐人物策略、暂停恢复与手动刷新。"
     )
     plugin_icon = "https://raw.githubusercontent.com/hbq0405/MoviePilot-Plugins/main/icons/personsubscribe.png"
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     plugin_author = "hbq0405"
     author_url = "https://github.com/hbq0405"
     plugin_config_prefix = "personsubscribe_"
@@ -239,11 +239,48 @@ class PersonSubscribe(_PluginBase):
         self.save_data("history", history[-500:])
 
     def _person_config(self, person: Dict[str, Any]) -> Dict[str, Any]:
+        """实际生效策略：默认策略逐字段覆盖；override 只存与默认不同的字段。"""
         override = person.get("config")
         if isinstance(override, dict) and override:
-            merged = {**self._default_config, **core.normalize_config(override)}
+            merged = {**self._default_config, **self._sanitize_override(override)}
             return core.normalize_config(merged)
         return dict(self._default_config)
+
+    @staticmethod
+    def _sanitize_override(raw: object) -> Dict[str, Any]:
+        """清洗个人策略覆盖：只保留已知字段和非空值，不补默认值。
+
+        存储必须是"部分覆盖"，否则会把代码默认值固化到个人记录里，
+        后续修改全局默认策略不再对该人物生效。
+        """
+        if not isinstance(raw, dict):
+            return {}
+        allowed_types = {
+            "roles": str, "start_year": int, "min_rating": float,
+            "min_vote_count": int, "main_role_only": bool,
+            "chinese_title_required": bool,
+            "media_types": list, "genres_include": list, "genres_exclude": list,
+        }
+        result: Dict[str, Any] = {}
+        for key, expected in allowed_types.items():
+            if key not in raw or raw[key] is None or raw[key] == "":
+                continue
+            value = raw[key]
+            try:
+                if expected is list:
+                    if not isinstance(value, (list, tuple)):
+                        continue
+                    value = [int(item) for item in value]
+                elif expected is bool:
+                    value = bool(value)
+                elif expected is str:
+                    value = str(value).strip()
+                else:
+                    value = expected(value)
+            except (TypeError, ValueError):
+                continue
+            result[key] = value
+        return result
 
     @staticmethod
     def _poster_url(poster_path: Optional[str]) -> Optional[str]:
@@ -699,7 +736,7 @@ class PersonSubscribe(_PluginBase):
                 return {"success": False, "message": "该人物已被订阅"}
             config = None
             if isinstance(payload.get("config"), dict) and payload["config"]:
-                config = core.normalize_config(payload["config"])
+                config = self._sanitize_override(payload["config"]) or None
             persons[str(person_id)] = {
                 "person_id": person_id,
                 "name": name,
@@ -739,6 +776,7 @@ class PersonSubscribe(_PluginBase):
                 **person,
                 "profile_url": self._poster_url(person.get("profile_path")),
                 "config": person.get("config") or None,
+                "effective_config": self._person_config(person),
             },
             "targets": related,
         }
@@ -755,10 +793,13 @@ class PersonSubscribe(_PluginBase):
                 if status not in ("active", "paused"):
                     return {"success": False, "message": "状态无效"}
                 person["status"] = status
-            if isinstance(payload.get("config"), dict):
-                person["config"] = (
-                    core.normalize_config(payload["config"]) or None
-                ) if payload["config"] else None
+            if "config" in payload:
+                raw = payload.get("config")
+                if isinstance(raw, dict) and raw:
+                    # 只保存与默认策略不同的字段，其余继续跟随默认策略。
+                    person["config"] = self._sanitize_override(raw) or None
+                else:
+                    person["config"] = None
             self._save_persons(persons)
         return {"success": True}
 
