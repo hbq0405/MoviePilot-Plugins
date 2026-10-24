@@ -460,14 +460,11 @@ class PersonSubscribe(_PluginBase):
                 self._save_targets(targets)
         return submitted
 
-    def _submit_target(self, target: Dict[str, Any]) -> bool:
-        """查缺并提交单个目标订阅；原地更新 target 状态，返回是否新建。"""
+    def _library_exists(self, target: Dict[str, Any]) -> bool:
+        """走宿主识别链查库：目标媒体是否已在媒体库（含媒体服务器）。"""
         mtype = MediaType.MOVIE if target["entity_type"] == "movie" else MediaType.TV
-        title = target.get("title") or ""
-        meta = MetaInfo(title)
+        meta = MetaInfo(target.get("title") or "")
         meta.type = mtype
-        # 走宿主识别链获取带完整身份的 MediaInfo（含缓存）；不能手工拼装
-        # schemas 的 MediaInfo，其不做来源字段投影，会导致库内查缺失效。
         try:
             mediainfo = self.chain.recognize_media(
                 meta=meta,
@@ -476,20 +473,26 @@ class PersonSubscribe(_PluginBase):
                 media_id=str(target["tmdb_id"]),
             )
         except Exception as err:
-            logger.warning(f"人物订阅：识别媒体失败 {title}：{err}")
+            logger.warning(f"人物订阅：识别媒体失败 {target.get('title')}：{err}")
             return False
         if mediainfo is None:
-            logger.warning(f"人物订阅：未能识别媒体信息 {title}，本轮跳过")
+            logger.warning(f"人物订阅：未能识别媒体信息 {target.get('title')}")
             return False
         try:
             exist_flag, _ = DownloadChain().get_no_exists_info(
                 meta=meta, mediainfo=mediainfo)
         except Exception as err:
-            logger.warning(f"人物订阅：查询媒体库失败 {title}：{err}")
+            logger.warning(f"人物订阅：查询媒体库失败 {target.get('title')}：{err}")
             return False
+        return bool(exist_flag)
+
+    def _submit_target(self, target: Dict[str, Any]) -> bool:
+        """查缺并提交单个目标订阅；原地更新 target 状态，返回是否新建。"""
+        mtype = MediaType.MOVIE if target["entity_type"] == "movie" else MediaType.TV
+        title = target.get("title") or ""
         person_names = "、".join(
             name for name in (target.get("persons") or {}).values())
-        if exist_flag:
+        if self._library_exists(target):
             target["status"] = "fulfilled"
             self._append_history("已入库", title, mtype.value, person_names,
                                  "媒体库中已存在")
@@ -578,19 +581,44 @@ class PersonSubscribe(_PluginBase):
         subscribe_id = _field(data, "subscribe_id")
         with self._lock:
             targets = self._load_targets()
+            matched = [
+                (key, target) for key, target in targets.items()
+                if (not subscribe_id or target.get("subscribe_id") == subscribe_id)
+                and (not media_id or str(target.get("tmdb_id")) == media_id)
+            ]
+        if not matched:
+            return
+        # 查库在锁外执行：用户删除订阅时，库内已有的目标标已入库，
+        # 库内没有的视为用户拒绝置已忽略（可在页面恢复）。
+        decisions: Dict[str, str] = {}
+        for key, target in matched:
+            if target.get("status") == "fulfilled":
+                decisions[key] = "fulfilled"
+            elif self._library_exists(target):
+                decisions[key] = "fulfilled"
+            else:
+                decisions[key] = "ignored"
+        with self._lock:
+            targets = self._load_targets()
             changed = False
-            for key, target in targets.items():
-                if subscribe_id and target.get("subscribe_id") != subscribe_id:
+            for key, decision in decisions.items():
+                target = targets.get(key)
+                if target is None:
                     continue
-                if media_id and str(target.get("tmdb_id")) != media_id:
-                    continue
-                if target.get("status") == "fulfilled":
-                    # 完成后的订阅清理不回退状态。
+                if target.get("status") == "fulfilled" and decision == "fulfilled":
+                    # 完成后的订阅清理只解除绑定，不回退状态。
                     target["subscribe_id"] = None
                     changed = True
                     continue
-                # 未完成即被删除视为用户拒绝：置 ignored，可在页面上恢复。
-                target["status"] = "ignored"
+                if decision == "fulfilled" and target.get("status") != "fulfilled":
+                    target["status"] = "fulfilled"
+                    self._append_history(
+                        "已入库", target.get("title") or "",
+                        target.get("entity_type") or "",
+                        "、".join((target.get("persons") or {}).values()),
+                        "订阅删除时确认媒体库中已存在")
+                else:
+                    target["status"] = "ignored"
                 target["external_subscribe"] = False
                 target["subscribe_id"] = None
                 target["last_change"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
