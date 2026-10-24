@@ -4,7 +4,7 @@
     "description": "搜索 TMDb 订阅演员/导演（头像+代表作人工确认，不误订同名人物），自动扫描其参演/执导作品，按题材/年份/评分/番位等策略过滤后创建订阅；未上映作品待映跟踪，上映后自动补订；支持逐人物策略、暂停恢复、手动刷新与作品追踪列表。行为移植自 ETKvNext 演员订阅。",
     "labels": "订阅",
     "version": "1.0.0",
-    "icon": "icons/personsubscribe.png",
+    "icon": "https://raw.githubusercontent.com/hbq0405/MoviePilot-PersonSubscribe/main/icons/personsubscribe.png",
     "author": "hbq0405",
     "level": 2,
     "release": true,

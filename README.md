@@ -1,7 +1,16 @@
 # MoviePilot 人物订阅插件仓库
 
 [PersonSubscribe（人物订阅）](plugins.v3/personsubscribe/README.md) 的独立插件市场仓库。
-在 MoviePilot「插件市场 → 添加仓库」中填入本仓库地址后即可安装。
+
+## 安装
+
+MoviePilot → 插件市场 → 添加仓库，填入：
+
+```text
+https://github.com/hbq0405/MoviePilot-PersonSubscribe
+```
+
+然后在市场中安装「人物订阅」，启用并在插件详情页添加人物即可。
 
 ```text
 plugins.v3/personsubscribe/   # 插件源码（后端 + Vue 联邦前端）
