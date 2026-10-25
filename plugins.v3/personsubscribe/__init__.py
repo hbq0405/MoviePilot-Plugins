@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from apscheduler.triggers.cron import CronTrigger
 
 from app.chain.download import DownloadChain
+from app.db.oper.subscribe import SubscribeOper
 from app.chain.subscribe import SubscribeChain
 from app.plugins import _PluginBase
 from app.schemas.types import EventType, MediaSource, MediaType
@@ -55,7 +56,7 @@ class PersonSubscribe(_PluginBase):
         "未上映作品待映跟踪，上映后自动补订，支持逐人物策略、暂停恢复与手动刷新。"
     )
     plugin_icon = "https://raw.githubusercontent.com/hbq0405/MoviePilot-Plugins/main/icons/personsubscribe.png"
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     plugin_author = "hbq0405"
     author_url = "https://github.com/hbq0405"
     plugin_config_prefix = "personsubscribe_"
@@ -119,7 +120,53 @@ class PersonSubscribe(_PluginBase):
     def _refresh_person_and_submit(self, person_id: int) -> None:
         """单人扫描后立即提交待订阅目标（新增/手动刷新路径）。"""
         self.refresh_person(person_id)
+        self._reconcile_stale_subscriptions()
         self._submit_wanted()
+
+    def _reconcile_stale_subscriptions(self) -> int:
+        """对账已删除的 MoviePilot 订阅，清理目标上的残留订阅状态。
+
+        旧版本没有订阅删除事件处理，订阅在 MoviePilot 被删除后目标
+        停留在 wanted+subscribe_id（显示订阅中）。对账规则：订阅已不存在
+        时按媒体库判定——库内已有当前版本置 fulfilled；没有则视为用户
+        拒绝置 ignored（可在页面恢复）。
+        """
+        with self._lock:
+            targets = self._load_targets()
+        stale = [
+            (key, target) for key, target in targets.items()
+            if target.get("status") == "wanted" and target.get("subscribe_id")
+        ]
+        if not stale:
+            return 0
+        reconciled = 0
+        for key, target in stale:
+            subscribe_id = int(target["subscribe_id"])
+            try:
+                record = SubscribeOper().get(subscribe_id)
+            except Exception as err:
+                logger.warning(f"人物订阅：查询订阅 #{subscribe_id} 失败：{err}")
+                continue
+            if record is not None:
+                continue
+            person_names = "、".join((target.get("persons") or {}).values())
+            if self._library_exists(target):
+                target["status"] = "fulfilled"
+                self._append_history(
+                    "已入库", target.get("title") or "",
+                    target.get("entity_type") or "", person_names,
+                    "对账时确认媒体库中已存在")
+            else:
+                target["status"] = "ignored"
+            target["subscribe_id"] = None
+            target["external_subscribe"] = False
+            target["last_change"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            reconciled += 1
+        if reconciled:
+            logger.info(f"人物订阅：对账清理已删除订阅的目标 {reconciled} 个")
+            with self._lock:
+                self._save_targets(targets)
+        return reconciled
 
     def __update_config(self) -> None:
         self.update_config({
@@ -351,9 +398,10 @@ class PersonSubscribe(_PluginBase):
         if not active:
             logger.info("人物订阅：暂无启用的人物，跳过本轮扫描")
             return {"persons_checked": 0, "targets": 0, "subscribed": 0,
+                    "reconciled": self._reconcile_stale_subscriptions(),
                     "pending_release": 0, "fulfilled": 0, "failed": 0}
         stats = {
-            "persons_checked": 0, "targets": 0, "subscribed": 0,
+            "persons_checked": 0, "targets": 0, "subscribed": 0, "reconciled": 0,
             "pending_release": 0, "fulfilled": 0, "failed": 0,
         }
         with ThreadPoolExecutor(max_workers=min(3, len(active))) as executor:
@@ -383,6 +431,7 @@ class PersonSubscribe(_PluginBase):
                     f"、失败原因：{result.get('error')}" if result.get("error") else "",
                 )
         # 提交阶段串行执行，避免并发写订阅表与通知洪峰。
+        stats["reconciled"] = self._reconcile_stale_subscriptions()
         stats["subscribed"] += self._submit_wanted()
         logger.info("人物订阅：本轮扫描完成 %s", stats)
         if self._notify and stats["subscribed"]:
